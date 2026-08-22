@@ -2,6 +2,7 @@
 	import { runDepthEstimation } from '$lib/processing';
 	import type { DepthEstimationOutput } from '@huggingface/transformers';
 	import { Fileupload } from 'flowbite-svelte';
+	import ThreeRenderer from '../components/ThreeRenderer.svelte';
 	let fileList = $state<FileList>();
 	let previewImageSrcURI = $state<string>();
 	let previewImageElem = $state<HTMLImageElement>();
@@ -33,4 +34,6 @@
 	class:hidden={!previewImageSrcURI}
 />
 
-<code>{depthEstimationResults ? JSON.stringify(depthEstimationResults, null, 2) : ''}</code>
+{#if depthEstimationResults && previewImageElem}
+	<ThreeRenderer depthMap={depthEstimationResults} image={previewImageElem} />
+{/if}
