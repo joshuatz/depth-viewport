@@ -1,0 +1,16 @@
+{
+	"files.associations": {
+		"*.css": "tailwindcss"
+	},
+	"editor.formatOnSave": true,
+	"editor.codeActionsOnSave": {
+		"source.fixAll": "always",
+		"source.organizeImports": "explicit"
+	},
+	"editor.insertSpaces": false,
+	"editor.tabSize": 4,
+	"[svelte][html][css]": {
+		"editor.detectIndentation": false,
+		"editor.insertSpaces": false
+	},
+}
