@@ -1,14 +1,19 @@
 <script lang="ts">
 	import { RawImage } from '@huggingface/transformers';
 	import * as ort from 'onnxruntime-web/webgpu';
+	import { useThrottle } from 'runed';
 	import { onMount } from 'svelte';
 
 	let {
 		renderPreview = $bindable(true),
-		mirrorVideo = false
+		mirrorVideo = false,
+		deltaThreshold = 20,
+		onDeltaThresholdReached = () => {}
 	}: {
 		renderPreview?: boolean;
 		mirrorVideo?: boolean;
+		onDeltaThresholdReached?: (deltaObj: { x: number; y: number }) => unknown;
+		deltaThreshold?: number;
 	} = $props();
 
 	let videoElem = $state<HTMLVideoElement>();
@@ -16,6 +21,21 @@
 	let stream = $state<MediaStream>();
 	let error = $state<string | null>(null);
 	let ortSession = $state<ort.InferenceSession>();
+	let positionDeltas = $state({ x: 0, y: 0 });
+	let isDetecting = false;
+
+	const throttledFaceDetector = useThrottle(
+		async () => {
+			if (isDetecting) return;
+			isDetecting = true;
+			try {
+				await trackFaceONNX();
+			} finally {
+				isDetecting = false;
+			}
+		},
+		() => 200
+	);
 
 	// Store box in state so drawFrame() keeps it on screen across 60fps renders
 	let activeBox = $state<{
@@ -41,7 +61,7 @@
 		return ortSession;
 	};
 
-	const drawFrame = () => {
+	const drawFrame = async () => {
 		if (!videoElem || !canvasElem) return;
 		const ctx = canvasElem.getContext('2d');
 		if (!ctx) return;
@@ -60,6 +80,8 @@
 			canvasElem.height
 		);
 		ctx.restore();
+
+		throttledFaceDetector();
 
 		// Overlay Bounding Box
 		if (activeBox) {
@@ -121,8 +143,6 @@
 		const inputTensor = await prepareRGBInputTensor(canvasElem, targetWidthPx, targetHeightPx);
 		const results = await session.run({ input: inputTensor });
 
-		console.log(results);
-
 		const stride: 8 | 16 | 32 = 32;
 
 		const objScores = results[`obj_${stride}`].data as Float32Array;
@@ -143,6 +163,7 @@
 		if (maxIndex === -1 || maxScore < 0.005) {
 			console.warn('No face detected above threshold');
 			activeBox = null;
+			positionDeltas = { x: 0, y: 0 };
 			return null;
 		}
 
@@ -171,6 +192,23 @@
 		// Top-Left Corner
 		const x = centerX - boxWidth / 2;
 		const y = centerY - boxHeight / 2;
+
+		// Compute delta from previous frame and accumulate
+		if (activeBox) {
+			const prevCenterX = activeBox.x + activeBox.w / 2;
+			const prevCenterY = activeBox.y + activeBox.h / 2;
+			const deltaFromPrevX = centerX - prevCenterX;
+			const deltaFromPrevY = centerY - prevCenterY;
+
+			positionDeltas.x += deltaFromPrevX;
+			positionDeltas.y += deltaFromPrevY;
+
+			const totalDelta = Math.sqrt(positionDeltas.x ** 2 + positionDeltas.y ** 2);
+			if (totalDelta >= deltaThreshold) {
+				onDeltaThresholdReached({ x: positionDeltas.x, y: positionDeltas.y });
+				positionDeltas = { x: 0, y: 0 };
+			}
+		}
 
 		// Update Svelte State
 		const isLeft = centerX < canvasElem.width / 2;
@@ -226,6 +264,7 @@
 <button
 	type="button"
 	onclick={async () => {
+		if (isDetecting) return;
 		const result = await trackFaceONNX();
 		console.log(result);
 	}}>Detect</button
