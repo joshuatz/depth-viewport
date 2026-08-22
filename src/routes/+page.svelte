@@ -2,6 +2,7 @@
 	import { runDepthEstimation } from '$lib/processing';
 	import type { DepthEstimationOutput } from '@huggingface/transformers';
 	import { Fileupload } from 'flowbite-svelte';
+	import FaceDetector from '../components/FaceDetector.svelte';
 	import ThreeRenderer from '../components/ThreeRenderer.svelte';
 	let fileList = $state<FileList>();
 	let previewImageSrcURI = $state<string>();
@@ -23,6 +24,8 @@
 		};
 	});
 </script>
+
+<FaceDetector />
 
 <Fileupload bind:files={fileList} clearable />
 
