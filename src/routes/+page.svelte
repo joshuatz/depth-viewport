@@ -30,9 +30,12 @@
 <FaceDetector
 	onDeltaThresholdReached={(delta) => {
 		if (!threeJSControls) return;
-		const sensitivity = 0.005;
-		threeJSControls.target.x -= delta.x * sensitivity;
-		threeJSControls.target.y += delta.y * sensitivity;
+		const translationSensitivity = 0.005;
+		const rotationSensitivity = 0.02;
+		threeJSControls.target.x -= delta.x * translationSensitivity;
+		threeJSControls.target.y += delta.y * translationSensitivity;
+		threeJSControls.object.rotation.x += delta.y * rotationSensitivity;
+		threeJSControls.object.rotation.y -= delta.x * rotationSensitivity;
 		threeJSControls.update();
 	}}
 />

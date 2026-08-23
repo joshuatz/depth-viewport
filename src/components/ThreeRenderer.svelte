@@ -1,21 +1,25 @@
 <script lang="ts">
 	/* eslint-disable svelte/no-dom-manipulating */
 	import type { DepthEstimationOutput } from '@huggingface/transformers';
-	import { watch } from 'runed';
+	import { useResizeObserver, watch } from 'runed';
 	import * as THREE from 'three';
 	import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 
 	let {
 		depthMap,
 		image,
-		controls = $bindable()
+		controls = $bindable(),
+		fullscreen = $bindable(false)
 	}: {
 		depthMap: DepthEstimationOutput | undefined;
 		image: HTMLImageElement | undefined;
 		controls?: OrbitControls;
+		fullscreen?: boolean;
 	} = $props();
 
 	let containerElem = $state<HTMLDivElement>();
+	let camera = $state<THREE.PerspectiveCamera>();
+	let renderer = $state<THREE.WebGLRenderer>();
 
 	watch(
 		() => ({ depthMap, image, containerElem }),
@@ -30,12 +34,12 @@
 			// 75: Field of view in degrees (standard balanced FOV for 3D viewers).
 			// 1: Aspect ratio matching the square 400x400 canvas.
 			// 0.1 & 1000: Near and far clipping planes (objects closer than 0.1 or farther than 1000 units won't render).
-			const camera = new THREE.PerspectiveCamera(75, 1, 0.1, 1000);
+			camera = new THREE.PerspectiveCamera(75, 1, 0.1, 1000);
 
 			// Position camera 2 units along the Z-axis so a 2x2 plane centered at (0,0,0) comfortably fills the FOV.
 			camera.position.z = 2;
 
-			const renderer = new THREE.WebGLRenderer({ antialias: true });
+			renderer = new THREE.WebGLRenderer({ antialias: true });
 			// Fixed dimensions for the interactive viewport in pixels.
 			renderer.setSize(400, 400);
 			containerElem.appendChild(renderer.domElement);
@@ -81,20 +85,48 @@
 			let frameId: number;
 			const animate = () => {
 				frameId = requestAnimationFrame(animate);
-				controls?.update();
-				renderer.render(scene, camera);
+				controls!.update();
+				renderer!.render(scene, camera!);
 			};
 			animate();
 
 			return () => {
 				cancelAnimationFrame(frameId);
 				controls?.dispose();
-				renderer.dispose();
+				renderer?.dispose();
 				geometry.dispose();
 				material.dispose();
 			};
 		}
 	);
+
+	$effect(() => {
+		if (fullscreen && !document.fullscreenElement) {
+			containerElem?.requestFullscreen();
+		} else {
+			try {
+				document.exitFullscreen();
+			} finally {
+				//
+			}
+		}
+	});
+
+	useResizeObserver(
+		() => containerElem,
+		() => {
+			if (!camera || !renderer || !containerElem) {
+				return;
+			}
+			// Update camera matrix using the container's updated dimensions
+			camera.aspect = containerElem.clientWidth / containerElem.clientHeight;
+			camera.updateProjectionMatrix();
+
+			// Update renderer and account for pixel ratio limits
+			renderer.setSize(containerElem.clientWidth, containerElem.clientHeight);
+			renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+		}
+	);
 </script>
 
-<div bind:this={containerElem}></div>
+<div bind:this={containerElem} onclick={() => (fullscreen = !fullscreen)}></div>
