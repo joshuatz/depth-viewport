@@ -1,6 +1,6 @@
 <script lang="ts">
 	/* eslint-disable svelte/no-dom-manipulating */
-	import type { DepthEstimationOutput } from '@huggingface/transformers';
+	import type { RawImage } from '@huggingface/transformers';
 	import { useResizeObserver, watch } from 'runed';
 	import * as THREE from 'three';
 	import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
@@ -14,7 +14,7 @@
 		fullscreen = $bindable(false),
 		displacementScale = $bindable(0.8)
 	}: {
-		depthMap: DepthEstimationOutput | undefined;
+		depthMap: RawImage | undefined;
 		image: HTMLImageElement | undefined;
 		renderer?: THREE.WebGLRenderer;
 		controls?: OrbitControls;
@@ -59,7 +59,7 @@
 			const colorTexture = new THREE.Texture(image);
 			colorTexture.needsUpdate = true;
 
-			const depthCanvas = depthMap.depth.toCanvas();
+			const depthCanvas = depthMap.toCanvas();
 			const depthTexture = new THREE.CanvasTexture(depthCanvas);
 
 			// PlaneGeometry parameters:

@@ -1,6 +1,10 @@
 <script lang="ts">
-	import { DEPTH_MODEL_OPTIONS, type DepthModelOption, runDepthEstimation } from '$lib/processing';
-	import type { DepthEstimationOutput } from '@huggingface/transformers';
+	import {
+		DEPTH_MODEL_OPTIONS,
+		type DepthExtractionResults,
+		type DepthModelOption,
+		runDepthExtraction
+	} from '$lib/processing';
 	import { cn } from 'cnfast';
 	import { ButtonGroup, Fileupload, Label, Range, Select, Toggle } from 'flowbite-svelte';
 	import type { PerspectiveCamera, WebGLRenderer } from 'three';
@@ -14,7 +18,7 @@
 	let fileList = $state<FileList>();
 	let previewImageSrcURI = $state<string>();
 	let previewImageElem = $state<HTMLImageElement>();
-	let depthEstimationResults = $state<DepthEstimationOutput>();
+	let depthExtractionResults = $state<DepthExtractionResults>();
 	let threeJSControls = $state<OrbitControls>();
 	let threeJSCamera = $state<PerspectiveCamera>();
 	let threeJSRenderer = $state<WebGLRenderer>();
@@ -49,8 +53,17 @@
 
 		previewImageSrcURI = objectURL;
 		previewImageElem.onload = async () => {
-			const results = await runDepthEstimation(objectURL, selectedDepthModel);
-			depthEstimationResults = Array.isArray(results) ? results[0] : results;
+			const imageBytes = await fileList![0].arrayBuffer();
+
+			depthExtractionResults = await runDepthExtraction({
+				imageBytes,
+				mlPipelineInput: objectURL,
+				model: selectedDepthModel
+			});
+			// Automatically tone-down the depth effect if the source is an embedded depth map
+			if (depthExtractionResults.source === 'embedded') {
+				displacementScale = 0.2;
+			}
 			URL.revokeObjectURL(objectURL);
 		};
 	});
@@ -66,6 +79,8 @@
 			threeJSControls.connect(threeJSRenderer.domElement);
 		}
 	});
+
+	$inspect(depthExtractionResults?.source);
 </script>
 
 {#snippet InputModeButton(inputType: MovementInputType)}
@@ -159,9 +174,9 @@
 	<!-- Input image preview -->
 	<img bind:this={previewImageElem} alt="Input preview" src={previewImageSrcURI} class="hidden" />
 
-	{#if depthEstimationResults && previewImageElem}
+	{#if depthExtractionResults && previewImageElem}
 		<ThreeRenderer
-			depthMap={depthEstimationResults}
+			depthMap={depthExtractionResults.depthMap}
 			image={previewImageElem}
 			bind:controls={threeJSControls}
 			bind:camera={threeJSCamera}
