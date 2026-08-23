@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { RawImage } from '@huggingface/transformers';
+	import cn from 'cnfast';
 	import * as ort from 'onnxruntime-web/webgpu';
 	import { useThrottle } from 'runed';
 	import { onMount } from 'svelte';
@@ -8,21 +9,27 @@
 		renderPreview = $bindable(true),
 		mirrorVideo = false,
 		deltaThreshold = 5,
-		onDeltaThresholdReached = () => {}
+		onDeltaThresholdReached = () => {},
+		activationButton,
+		isActive = $bindable(false)
 	}: {
 		renderPreview?: boolean;
 		mirrorVideo?: boolean;
 		onDeltaThresholdReached?: (deltaObj: { x: number; y: number }) => unknown;
 		deltaThreshold?: number;
+		activationButton?: HTMLElement;
+		isActive?: boolean;
 	} = $props();
 
 	let videoElem = $state<HTMLVideoElement>();
-	let canvasElem = $state<HTMLCanvasElement>();
+	let videoMirrorCanvas = $state<HTMLCanvasElement>();
+	let outputVisualizationCanvas = $state<HTMLCanvasElement>();
 	let stream = $state<MediaStream>();
 	let error = $state<string | null>(null);
 	let ortSession = $state<ort.InferenceSession>();
 	let positionDeltas = $state({ x: 0, y: 0 });
 	let isDetecting = false;
+	let intrinsicVideoDims = $state({ width: 200, height: 200 });
 
 	const throttledFaceDetector = useThrottle(
 		async () => {
@@ -37,7 +44,7 @@
 		() => 50
 	);
 
-	// Store box in state so drawFrame() keeps it on screen across 60fps renders
+	// Stores box relative to videoMirrorCanvas pixel dimensions
 	let activeBox = $state<{
 		x: number;
 		y: number;
@@ -62,52 +69,79 @@
 	};
 
 	const drawFrame = async () => {
-		if (!videoElem || !canvasElem) return;
-		const ctx = canvasElem.getContext('2d');
-		if (!ctx) return;
+		if (!videoElem || !videoMirrorCanvas || !outputVisualizationCanvas) return;
+		const videoFrameCtx = videoMirrorCanvas.getContext('2d');
+		const outputVisCtx = outputVisualizationCanvas.getContext('2d');
+		if (!videoFrameCtx || !outputVisCtx) return;
 
-		// Clear & Draw Mirrored Video
-		ctx.clearRect(0, 0, canvasElem.width, canvasElem.height);
-		ctx.save();
-		if (mirrorVideo) {
-			ctx.scale(-1, 1);
-		}
-		ctx.drawImage(
-			videoElem,
-			mirrorVideo ? -canvasElem.width : 0,
-			0,
-			canvasElem.width,
-			canvasElem.height
-		);
-		ctx.restore();
+		const allCtx = [videoFrameCtx, outputVisCtx];
+
+		// Clear & draw video
+		allCtx.forEach((ctx, idx) => {
+			if (!videoMirrorCanvas || !videoElem) {
+				return;
+			}
+			const targetCanvas = idx === 0 ? videoMirrorCanvas : outputVisualizationCanvas;
+			if (!targetCanvas) {
+				return;
+			}
+			ctx.clearRect(0, 0, targetCanvas.width, targetCanvas.height);
+			ctx.save();
+			if (mirrorVideo) {
+				ctx.scale(-1, 1);
+			}
+			ctx.drawImage(
+				videoElem,
+				mirrorVideo ? -targetCanvas.width : 0,
+				0,
+				targetCanvas.width,
+				targetCanvas.height
+			);
+			ctx.restore();
+		});
 
 		throttledFaceDetector();
 
 		// Overlay Bounding Box
-		if (activeBox) {
-			ctx.save();
-			let bboxX = activeBox.x;
+		if (activeBox && videoMirrorCanvas.width > 0 && videoMirrorCanvas.height > 0) {
+			outputVisCtx.save();
+
+			// Compute scaling ratios between video mirror canvas and output canvas
+			const scaleX = outputVisualizationCanvas.width / videoMirrorCanvas.width;
+			const scaleY = outputVisualizationCanvas.height / videoMirrorCanvas.height;
+
+			const boxW = activeBox.w * scaleX;
+			const boxH = activeBox.h * scaleY;
+			let bboxX = activeBox.x * scaleX;
+			const bboxY = activeBox.y * scaleY;
+
 			// Compensate for mirrored canvas
 			if (mirrorVideo) {
-				bboxX = canvasElem.width - (activeBox.x + activeBox.w);
+				bboxX = outputVisualizationCanvas.width - (bboxX + boxW);
 			}
 
-			ctx.strokeStyle = '#00FF00';
-			ctx.lineWidth = 3;
-			ctx.strokeRect(bboxX, activeBox.y, activeBox.w, activeBox.h);
+			// Bounding box itself
+			outputVisCtx.strokeStyle = '#00FF00';
+			outputVisCtx.lineWidth = 3;
+			outputVisCtx.strokeRect(bboxX, bboxY, boxW, boxH);
 
-			ctx.fillStyle = '#00FF00';
-			ctx.font = 'bold 16px sans-serif';
-			const textWidth = ctx.measureText(activeBox.label).width;
-			ctx.fillRect(bboxX, activeBox.y > 25 ? activeBox.y - 25 : activeBox.y, textWidth + 10, 22);
+			if (!renderPreview) {
+				// Render face detection as just a box (completely obscure face)
+				outputVisCtx.fillStyle = '#000000';
+				outputVisCtx.fillRect(bboxX, bboxY, boxW, boxH);
+			}
 
-			ctx.fillStyle = '#000000';
-			ctx.fillText(
-				activeBox.label,
-				bboxX + 5,
-				activeBox.y > 25 ? activeBox.y - 8 : activeBox.y + 16
-			);
-			ctx.restore();
+			// Solid fill background behind text
+			outputVisCtx.fillStyle = '#00FF00';
+			outputVisCtx.font = 'bold 16px sans-serif';
+			const textWidth = outputVisCtx.measureText(activeBox.label).width;
+			outputVisCtx.fillRect(bboxX, bboxY > 25 ? bboxY - 25 : bboxY, textWidth + 10, 22);
+
+			// Text
+			outputVisCtx.fillStyle = '#000000';
+			outputVisCtx.fillText(activeBox.label, bboxX + 5, bboxY > 25 ? bboxY - 8 : bboxY + 16);
+
+			outputVisCtx.restore();
 		}
 
 		requestAnimationFrame(drawFrame);
@@ -136,11 +170,15 @@
 	}
 
 	async function trackFaceONNX() {
-		if (!canvasElem) throw new Error('Canvas not available');
+		if (!videoMirrorCanvas) throw new Error('Canvas not available');
 		const session = await initModel();
 		const { targetHeightPx, targetWidthPx } = MODEL_CONFIG;
 
-		const inputTensor = await prepareRGBInputTensor(canvasElem, targetWidthPx, targetHeightPx);
+		const inputTensor = await prepareRGBInputTensor(
+			videoMirrorCanvas,
+			targetWidthPx,
+			targetHeightPx
+		);
 		const results = await session.run({ input: inputTensor });
 
 		const stride: 8 | 16 | 32 = 32;
@@ -181,8 +219,8 @@
 		const dh = bboxData[bboxOffset + 3];
 
 		// Apply grid offsets and scale back to full canvas pixel dimensions
-		const scaleX = canvasElem.width / targetWidthPx;
-		const scaleY = canvasElem.height / targetHeightPx;
+		const scaleX = videoMirrorCanvas.width / targetWidthPx;
+		const scaleY = videoMirrorCanvas.height / targetHeightPx;
 
 		const boxWidth = Math.exp(dw) * stride * scaleX;
 		const boxHeight = Math.exp(dh) * stride * scaleY;
@@ -211,7 +249,7 @@
 		}
 
 		// Update Svelte State
-		const isLeft = centerX < canvasElem.width / 2;
+		const isLeft = centerX < videoMirrorCanvas.width / 2;
 		activeBox = {
 			x,
 			y,
@@ -227,30 +265,53 @@
 		};
 	}
 
-	onMount(() => {
-		(async () => {
-			try {
-				stream = await navigator.mediaDevices.getUserMedia({
-					video: { facingMode: 'user' }
-				});
-				if (videoElem) {
-					videoElem.srcObject = stream;
-					await videoElem.play();
-				}
-				if (canvasElem && videoElem) {
-					canvasElem.width = videoElem.videoWidth || 640;
-					canvasElem.height = videoElem.videoHeight || 480;
-				}
-				requestAnimationFrame(drawFrame);
-			} catch (e) {
-				error = e instanceof Error ? e.message : 'Failed to access webcam';
-				console.error(error);
+	// eslint-disable-next-line @typescript-eslint/no-unused-vars
+	async function requestWebCamAndStartProcessing(_evt?: Event) {
+		if (isActive) {
+			return;
+		}
+		try {
+			stream = await navigator.mediaDevices.getUserMedia({
+				video: { facingMode: 'user' }
+			});
+			if (videoElem) {
+				videoElem.srcObject = stream;
+				await videoElem.play();
 			}
-		})();
+			// Just in case: to make sure video intrinsic dimensions are set
+			await new Promise((res) => setTimeout(res, 50));
+			if (videoMirrorCanvas && videoElem) {
+				intrinsicVideoDims = {
+					width: videoElem.videoWidth,
+					height: videoElem.videoHeight
+				};
+			}
+			requestAnimationFrame(drawFrame);
+			isActive = true;
+		} catch (e) {
+			error = e instanceof Error ? e.message : 'Failed to access webcam';
+			console.error(error);
+			isActive = false;
+		}
+	}
+
+	onMount(() => {
 		return () => {
 			// Disconnect camera stream on dismount
 			if (stream) {
 				stream.getTracks().forEach((t) => t.stop());
+			}
+			isActive = false;
+		};
+	});
+
+	$effect(() => {
+		if (activationButton) {
+			activationButton.addEventListener('click', requestWebCamAndStartProcessing);
+		}
+		return () => {
+			if (activationButton) {
+				activationButton.removeEventListener('click', requestWebCamAndStartProcessing);
 			}
 		};
 	});
@@ -260,6 +321,22 @@
 	<p class="error">{error}</p>
 {/if}
 
-<video bind:this={videoElem} autoplay playsinline class:hidden={!renderPreview}></video>
+<video bind:this={videoElem} autoplay playsinline class="hidden"></video>
+<canvas
+	bind:this={videoMirrorCanvas}
+	class="hidden"
+	width={intrinsicVideoDims.width}
+	height={intrinsicVideoDims.height}
+></canvas>
 
-<canvas bind:this={canvasElem} class:hidden={!renderPreview}></canvas>
+<!-- Render output visualization canvas with explicit pixel dimensions -->
+<canvas
+	bind:this={outputVisualizationCanvas}
+	width={intrinsicVideoDims.width}
+	height={intrinsicVideoDims.height}
+	style="aspect-ratio: {intrinsicVideoDims.width / intrinsicVideoDims.height};"
+	class={cn('h-auto', {
+		'fixed bottom-0 left-1 w-25 opacity-40': !renderPreview,
+		'w-full': renderPreview
+	})}
+></canvas>

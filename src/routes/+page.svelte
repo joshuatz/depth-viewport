@@ -7,6 +7,7 @@
 	} from '$lib/processing';
 	import { cn } from 'cnfast';
 	import { ButtonGroup, Fileupload, Label, Range, Select, Toggle } from 'flowbite-svelte';
+	import { watch } from 'runed';
 	import type { PerspectiveCamera, WebGLRenderer } from 'three';
 	import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 	import LucideMousePointerClick from '~icons/lucide/mouse-pointer-click';
@@ -26,6 +27,7 @@
 	let selectedDepthModel = $state<DepthModelOption>(DEPTH_MODEL_OPTIONS[0]);
 	let displacementScale = $state(0.8);
 	let renderWebCamPreview = $state(false);
+	let webcamStreamTriggerButton = $state<HTMLElement>();
 
 	type MovementInputType = 'cursor' | 'face' | 'gyro';
 	let movementInputsActive = $state<Record<MovementInputType, boolean>>({
@@ -80,6 +82,17 @@
 			threeJSControls.connect(threeJSRenderer.domElement);
 		}
 	});
+
+	// Sync various different combinations of inputs, deactivated vs activated state
+	watch(
+		() => movementInputsActive.face,
+		(faceActive) => {
+			if (faceActive) {
+				// Disable gyro to prevent conflict
+				movementInputsActive.gyro = false;
+			}
+		}
+	);
 </script>
 
 {#snippet InputModeButton(inputType: MovementInputType)}
@@ -87,6 +100,7 @@
 	{@const active = movementInputsActive[inputType]}
 	{@const disabled = !movementInputsCapable[inputType]}
 	<button
+		bind:this={() => undefined, (el) => inputType === 'face' && (webcamStreamTriggerButton = el)}
 		type="button"
 		{disabled}
 		onclick={() => {
@@ -151,28 +165,32 @@
 	</div>
 {/snippet}
 
-<div class="fixed top-0 left-0 flex h-screen w-screen flex-col flex-wrap">
+<div class="fixed top-0 left-0 flex h-screen w-screen flex-row flex-wrap">
 	{@render InputsAndConfig()}
 
-	{#if movementInputsActive.face}
-		<FaceDetector
-			renderPreview={renderWebCamPreview}
-			onDeltaThresholdReached={(delta) => {
-				if (!threeJSControls || !threeJSCamera) return;
-				const parallaxStrength = 0.008;
+	<FaceDetector
+		renderPreview={renderWebCamPreview}
+		onDeltaThresholdReached={(delta) => {
+			if (!threeJSControls || !threeJSCamera) return;
+			const parallaxStrength = 0.008;
 
-				// Shift camera position to create parallax effect
-				threeJSCamera.position.x -= delta.x * parallaxStrength;
-				threeJSCamera.position.y += delta.y * parallaxStrength;
+			// Shift camera position to create parallax effect
+			threeJSCamera.position.x -= delta.x * parallaxStrength;
+			threeJSCamera.position.y += delta.y * parallaxStrength;
 
-				threeJSControls.update();
-			}}
-		/>
-	{/if}
+			threeJSControls.update();
+		}}
+		activationButton={webcamStreamTriggerButton}
+		bind:isActive={movementInputsActive['face']}
+	/>
 
 	<GyroInput
 		visualize
-		bind:isListening={movementInputsActive.gyro}
+		bind:isListening={
+			() => false, (isListening) => !isListening && (movementInputsActive.gyro = false)
+		}
+		// Automatically disable gyro input when face input is active
+		enabled={!movementInputsActive.face && movementInputsActive.gyro}
 		webAPI="deviceorientation"
 		threeInputs={{ camera: threeJSCamera, controls: threeJSControls }}
 	/>
