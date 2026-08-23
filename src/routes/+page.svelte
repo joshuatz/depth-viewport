@@ -13,6 +13,7 @@
 	import LucideRotate3d from '~icons/lucide/rotate-3d';
 	import LucideScanFace from '~icons/lucide/scan-face';
 	import FaceDetector from '../components/FaceDetector.svelte';
+	import GyroInput from '../components/GyroInput.svelte';
 	import ThreeRenderer from '../components/ThreeRenderer.svelte';
 
 	let fileList = $state<FileList>();
@@ -35,7 +36,7 @@
 	let movementInputsCapable = $state<Record<MovementInputType, boolean>>({
 		cursor: true,
 		face: true,
-		gyro: false
+		gyro: true
 	});
 	const movementInputIcons = {
 		cursor: LucideMousePointerClick,
@@ -79,8 +80,6 @@
 			threeJSControls.connect(threeJSRenderer.domElement);
 		}
 	});
-
-	$inspect(depthExtractionResults?.source);
 </script>
 
 {#snippet InputModeButton(inputType: MovementInputType)}
@@ -170,6 +169,13 @@
 			}}
 		/>
 	{/if}
+
+	<GyroInput
+		visualize
+		bind:isListening={movementInputsActive.gyro}
+		webAPI="deviceorientation"
+		threeInputs={{ camera: threeJSCamera, controls: threeJSControls }}
+	/>
 
 	<!-- Input image preview -->
 	<img bind:this={previewImageElem} alt="Input preview" src={previewImageSrcURI} class="hidden" />

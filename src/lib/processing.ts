@@ -1,4 +1,4 @@
-import { env, pipeline, RawImage, type DepthEstimationOutput } from '@huggingface/transformers';
+import { pipeline, RawImage, type DepthEstimationOutput } from '@huggingface/transformers';
 import type { ImagePipelineInputs } from '../../node_modules/@huggingface/transformers/types/pipelines/_base';
 
 export const DEPTH_MODEL_OPTIONS = [
@@ -14,18 +14,17 @@ export async function runDepthEstimation(
 	imageInput: ImagePipelineInputs,
 	model: DepthModelOption
 ): Promise<DepthEstimationOutput> {
-	// Force WebGPU execution
-	if (env.backends.onnx.wasm) {
-		env.backends.onnx.wasm.numThreads = 1;
-	}
-
 	const depthEstimator = await pipeline('depth-estimation', model.repo, {
-		device: 'webgpu',
+		device: 'auto',
 		...model
 	});
 
+	console.log(`Depth estimation pipeline loaded; model = ${model}`);
+
 	// Run depth prediction locally in the browser
 	const result = await depthEstimator(imageInput);
+
+	console.log(`Depth estimation complete!`);
 
 	// 'result.depth' contains the processed RawImage depth map
 	// 'result.predicted_depth' contains the raw tensor output
