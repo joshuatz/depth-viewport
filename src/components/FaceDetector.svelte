@@ -227,24 +227,32 @@
 		};
 	}
 
-	onMount(async () => {
-		try {
-			stream = await navigator.mediaDevices.getUserMedia({
-				video: { facingMode: 'user' }
-			});
-			if (videoElem) {
-				videoElem.srcObject = stream;
-				await videoElem.play();
+	onMount(() => {
+		(async () => {
+			try {
+				stream = await navigator.mediaDevices.getUserMedia({
+					video: { facingMode: 'user' }
+				});
+				if (videoElem) {
+					videoElem.srcObject = stream;
+					await videoElem.play();
+				}
+				if (canvasElem && videoElem) {
+					canvasElem.width = videoElem.videoWidth || 640;
+					canvasElem.height = videoElem.videoHeight || 480;
+				}
+				requestAnimationFrame(drawFrame);
+			} catch (e) {
+				error = e instanceof Error ? e.message : 'Failed to access webcam';
+				console.error(error);
 			}
-			if (canvasElem && videoElem) {
-				canvasElem.width = videoElem.videoWidth || 640;
-				canvasElem.height = videoElem.videoHeight || 480;
+		})();
+		return () => {
+			// Disconnect camera stream on dismount
+			if (stream) {
+				stream.getTracks().forEach((t) => t.stop());
 			}
-			requestAnimationFrame(drawFrame);
-		} catch (e) {
-			error = e instanceof Error ? e.message : 'Failed to access webcam';
-			console.error(error);
-		}
+		};
 	});
 </script>
 

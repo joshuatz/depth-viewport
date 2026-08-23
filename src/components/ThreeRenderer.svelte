@@ -9,12 +9,14 @@
 		depthMap,
 		image,
 		camera = $bindable(),
+		renderer = $bindable(),
 		controls = $bindable(),
 		fullscreen = $bindable(false),
 		displacementScale = $bindable(0.8)
 	}: {
 		depthMap: DepthEstimationOutput | undefined;
 		image: HTMLImageElement | undefined;
+		renderer?: THREE.WebGLRenderer;
 		controls?: OrbitControls;
 		camera?: THREE.PerspectiveCamera;
 		fullscreen?: boolean;
@@ -25,7 +27,6 @@
 	} = $props();
 
 	let containerElem = $state<HTMLDivElement>();
-	let renderer = $state<THREE.WebGLRenderer>();
 
 	watch(
 		() => ({ depthMap, image, containerElem, displacementScale }),
