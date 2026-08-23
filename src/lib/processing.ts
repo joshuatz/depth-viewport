@@ -10,12 +10,29 @@ export const DEPTH_MODEL_OPTIONS = [
 ] as const;
 export type DepthModelOption = (typeof DEPTH_MODEL_OPTIONS)[number];
 
+async function detectWebGPUSupport() {
+	if (!navigator.gpu) {
+		return false;
+	}
+
+	let adapter;
+	try {
+		adapter = await navigator.gpu.requestAdapter();
+	} catch (error) {
+		console.warn(error);
+	}
+
+	return !!adapter;
+}
+
 export async function runDepthEstimation(
 	imageInput: ImagePipelineInputs,
 	model: DepthModelOption
 ): Promise<DepthEstimationOutput> {
+	const supportsWebGPU = await detectWebGPUSupport();
+	console.log({ supportsWebGPU });
 	const depthEstimator = await pipeline('depth-estimation', model.repo, {
-		device: 'auto',
+		device: supportsWebGPU ? 'webgpu' : 'wasm',
 		...model
 	});
 
