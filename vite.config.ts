@@ -2,6 +2,7 @@ import adapter from '@sveltejs/adapter-static';
 import { sveltekit } from '@sveltejs/kit/vite';
 import tailwindcss from '@tailwindcss/vite';
 import { playwright } from '@vitest/browser-playwright';
+import Icons from 'unplugin-icons/vite';
 import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
@@ -14,7 +15,8 @@ export default defineConfig({
 					filename.split(/[/\\]/).includes('node_modules') ? undefined : true
 			},
 			adapter: adapter()
-		})
+		}),
+		Icons({ compiler: 'svelte' })
 	],
 	test: {
 		expect: { requireAssertions: true },
