@@ -8,21 +8,27 @@
 	let {
 		depthMap,
 		image,
+		camera = $bindable(),
 		controls = $bindable(),
-		fullscreen = $bindable(false)
+		fullscreen = $bindable(false),
+		displacementScale = $bindable(0.8)
 	}: {
 		depthMap: DepthEstimationOutput | undefined;
 		image: HTMLImageElement | undefined;
 		controls?: OrbitControls;
+		camera?: THREE.PerspectiveCamera;
 		fullscreen?: boolean;
+		/**
+		 * Controls the depth intensity in world units.
+		 */
+		displacementScale?: number;
 	} = $props();
 
 	let containerElem = $state<HTMLDivElement>();
-	let camera = $state<THREE.PerspectiveCamera>();
 	let renderer = $state<THREE.WebGLRenderer>();
 
 	watch(
-		() => ({ depthMap, image, containerElem }),
+		() => ({ depthMap, image, containerElem, displacementScale }),
 		() => {
 			if (!depthMap || !image || !containerElem) return;
 
@@ -65,10 +71,7 @@
 			const material = new THREE.MeshStandardMaterial({
 				map: colorTexture,
 				displacementMap: depthTexture,
-				// Controls the depth intensity in world units.
-				// 0.3 means white pixels in the depth map displace vertices by a maximum of 0.3 units forward.
-				// Keeping it relative (~15% of the 2.0 plane width) creates subtle depth without severe stretching.
-				displacementScale: 0.3
+				displacementScale
 			});
 
 			const mesh = new THREE.Mesh(geometry, material);
@@ -103,7 +106,7 @@
 	$effect(() => {
 		if (fullscreen && !document.fullscreenElement) {
 			containerElem?.requestFullscreen();
-		} else {
+		} else if (document.fullscreenElement) {
 			try {
 				document.exitFullscreen();
 			} finally {
@@ -129,4 +132,10 @@
 	);
 </script>
 
-<div bind:this={containerElem} onclick={() => (fullscreen = !fullscreen)}></div>
+<div
+	bind:this={containerElem}
+	ondblclick={() => (fullscreen = !fullscreen)}
+	class="min-h-1 flex-1"
+	role="button"
+	tabindex="-1"
+></div>

@@ -7,7 +7,7 @@
 	let {
 		renderPreview = $bindable(true),
 		mirrorVideo = false,
-		deltaThreshold = 20,
+		deltaThreshold = 5,
 		onDeltaThresholdReached = () => {}
 	}: {
 		renderPreview?: boolean;
@@ -34,7 +34,7 @@
 				isDetecting = false;
 			}
 		},
-		() => 200
+		() => 50
 	);
 
 	// Store box in state so drawFrame() keeps it on screen across 60fps renders
@@ -243,12 +243,7 @@
 			requestAnimationFrame(drawFrame);
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Failed to access webcam';
-		}
-	});
-
-	$effect(() => {
-		if (!renderPreview && stream) {
-			stream.getTracks().forEach((t) => t.stop());
+			console.error(error);
 		}
 	});
 </script>
@@ -260,12 +255,3 @@
 <video bind:this={videoElem} autoplay playsinline class:hidden={!renderPreview}></video>
 
 <canvas bind:this={canvasElem} class:hidden={!renderPreview}></canvas>
-
-<button
-	type="button"
-	onclick={async () => {
-		if (isDetecting) return;
-		const result = await trackFaceONNX();
-		console.log(result);
-	}}>Detect</button
->
