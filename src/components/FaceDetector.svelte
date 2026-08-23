@@ -2,7 +2,7 @@
 	import { RawImage } from '@huggingface/transformers';
 	import cn from 'cnfast';
 	import * as ort from 'onnxruntime-web/webgpu';
-	import { useThrottle } from 'runed';
+	import { useThrottle, watch } from 'runed';
 	import { onMount } from 'svelte';
 
 	let {
@@ -11,7 +11,9 @@
 		deltaThreshold = 5,
 		onDeltaThresholdReached = () => {},
 		activationButton,
-		isActive = $bindable(false)
+		// eslint-disable-next-line no-useless-assignment
+		isActive: _isActive = $bindable(false),
+		onIsActiveChange = () => {}
 	}: {
 		renderPreview?: boolean;
 		mirrorVideo?: boolean;
@@ -19,6 +21,7 @@
 		deltaThreshold?: number;
 		activationButton?: HTMLElement;
 		isActive?: boolean;
+		onIsActiveChange?: (isActive: boolean) => unknown;
 	} = $props();
 
 	let videoElem = $state<HTMLVideoElement>();
@@ -30,6 +33,7 @@
 	let positionDeltas = $state({ x: 0, y: 0 });
 	let isDetecting = false;
 	let intrinsicVideoDims = $state({ width: 200, height: 200 });
+	let isActive = $state(false);
 
 	const throttledFaceDetector = useThrottle(
 		async () => {
@@ -69,7 +73,7 @@
 	};
 
 	const drawFrame = async () => {
-		if (!videoElem || !videoMirrorCanvas || !outputVisualizationCanvas) return;
+		if (!videoElem || !videoMirrorCanvas || !outputVisualizationCanvas || !isActive) return;
 		const videoFrameCtx = videoMirrorCanvas.getContext('2d');
 		const outputVisCtx = outputVisualizationCanvas.getContext('2d');
 		if (!videoFrameCtx || !outputVisCtx) return;
@@ -144,7 +148,9 @@
 			outputVisCtx.restore();
 		}
 
-		requestAnimationFrame(drawFrame);
+		if (isActive) {
+			requestAnimationFrame(drawFrame);
+		}
 	};
 
 	async function prepareRGBInputTensor(
@@ -170,6 +176,9 @@
 	}
 
 	async function trackFaceONNX() {
+		if (!isActive) {
+			return;
+		}
 		if (!videoMirrorCanvas) throw new Error('Canvas not available');
 		const session = await initModel();
 		const { targetHeightPx, targetWidthPx } = MODEL_CONFIG;
@@ -266,8 +275,9 @@
 	}
 
 	// eslint-disable-next-line @typescript-eslint/no-unused-vars
-	async function requestWebCamAndStartProcessing(_evt?: Event) {
+	async function toggleActiveState(_evt?: Event) {
 		if (isActive) {
+			stop();
 			return;
 		}
 		try {
@@ -286,8 +296,8 @@
 					height: videoElem.videoHeight
 				};
 			}
-			requestAnimationFrame(drawFrame);
 			isActive = true;
+			requestAnimationFrame(drawFrame);
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Failed to access webcam';
 			console.error(error);
@@ -295,26 +305,42 @@
 		}
 	}
 
+	function stop() {
+		if (!isActive) {
+			console.warn(`Stop() called on already inactive instance`);
+			return;
+		}
+		isActive = false;
+		console.info('Stopping stream and setting isActive false');
+		if (stream) {
+			stream.getTracks().forEach((t) => t.stop());
+		}
+	}
+
 	onMount(() => {
-		return () => {
-			// Disconnect camera stream on dismount
-			if (stream) {
-				stream.getTracks().forEach((t) => t.stop());
-			}
-			isActive = false;
-		};
+		// Disconnect camera stream on dismount
+		return stop;
 	});
 
 	$effect(() => {
 		if (activationButton) {
-			activationButton.addEventListener('click', requestWebCamAndStartProcessing);
+			activationButton.addEventListener('click', toggleActiveState);
 		}
 		return () => {
 			if (activationButton) {
-				activationButton.removeEventListener('click', requestWebCamAndStartProcessing);
+				activationButton.removeEventListener('click', toggleActiveState);
 			}
 		};
 	});
+
+	// Sync with bindable prop
+	watch(
+		() => isActive,
+		(isActive) => {
+			_isActive = isActive;
+			onIsActiveChange(isActive);
+		}
+	);
 </script>
 
 {#if error}
@@ -336,7 +362,9 @@
 	height={intrinsicVideoDims.height}
 	style="aspect-ratio: {intrinsicVideoDims.width / intrinsicVideoDims.height};"
 	class={cn('h-auto', {
-		'fixed bottom-0 left-1 w-25 opacity-40': !renderPreview,
-		'w-full': renderPreview
+		'fixed bottom-0 left-1 z-10 w-25 border border-dashed border-white opacity-60 hover:opacity-90':
+			!renderPreview,
+		'w-full': renderPreview,
+		hidden: !isActive
 	})}
 ></canvas>

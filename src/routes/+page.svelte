@@ -6,7 +6,7 @@
 		runDepthExtraction
 	} from '$lib/processing';
 	import { cn } from 'cnfast';
-	import { ButtonGroup, Fileupload, Label, Range, Select, Toggle } from 'flowbite-svelte';
+	import { ButtonGroup, Fileupload, Label, Range, Select, Spinner, Toggle } from 'flowbite-svelte';
 	import { watch } from 'runed';
 	import type { PerspectiveCamera, WebGLRenderer } from 'three';
 	import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
@@ -28,6 +28,7 @@
 	let displacementScale = $state(0.8);
 	let renderWebCamPreview = $state(false);
 	let webcamStreamTriggerButton = $state<HTMLElement>();
+	let isProcessing = $state(false);
 
 	type MovementInputType = 'cursor' | 'face' | 'gyro';
 	let movementInputsActive = $state<Record<MovementInputType, boolean>>({
@@ -47,29 +48,37 @@
 	};
 
 	// Process file on input / file selection
-	$effect(() => {
-		if (!fileList?.length || !previewImageElem) {
-			previewImageSrcURI = undefined;
-			return;
-		}
-		const objectURL = URL.createObjectURL(fileList[0]);
-
-		previewImageSrcURI = objectURL;
-		previewImageElem.onload = async () => {
-			const imageBytes = await fileList![0].arrayBuffer();
-
-			depthExtractionResults = await runDepthExtraction({
-				imageBytes,
-				mlPipelineInput: objectURL,
-				model: selectedDepthModel
-			});
-			// Automatically tone-down the depth effect if the source is an embedded depth map
-			if (depthExtractionResults.source === 'embedded') {
-				displacementScale = 0.2;
+	watch(
+		() => ({ fileList, previewImageElem }),
+		({ fileList, previewImageElem }) => {
+			if (!fileList?.length || !previewImageElem) {
+				previewImageSrcURI = undefined;
+				return;
 			}
-			URL.revokeObjectURL(objectURL);
-		};
-	});
+			if (isProcessing) {
+				return;
+			}
+			isProcessing = true;
+			const objectURL = URL.createObjectURL(fileList[0]);
+
+			previewImageSrcURI = objectURL;
+			previewImageElem.onload = async () => {
+				const imageBytes = await fileList![0].arrayBuffer();
+
+				depthExtractionResults = await runDepthExtraction({
+					imageBytes,
+					mlPipelineInput: objectURL,
+					model: selectedDepthModel
+				});
+				// Automatically tone-down the depth effect if the source is an embedded depth map
+				if (depthExtractionResults.source === 'embedded') {
+					displacementScale = 0.2;
+				}
+				URL.revokeObjectURL(objectURL);
+				isProcessing = false;
+			};
+		}
+	);
 
 	// Enable / disable mouse controls
 	$effect(() => {
@@ -102,16 +111,17 @@
 	<button
 		bind:this={() => undefined, (el) => inputType === 'face' && (webcamStreamTriggerButton = el)}
 		type="button"
+		title="Enable / disable {inputType} input"
 		{disabled}
 		onclick={() => {
-			if (disabled) return;
+			if (disabled || inputType === 'face') return;
 			movementInputsActive[inputType] = !active;
 		}}
 		class={cn(
-			'flex items-center justify-center rounded-lg p-4 transition-all duration-200 select-none',
+			'flex cursor-pointer items-center justify-center rounded-lg p-4 transition-all duration-200 select-none',
 			{
 				// Disabled: faded, no interaction
-				'pointer-events-none cursor-not-allowed opacity-40': disabled,
+				'pointer-events-none cursor-not-allowed! opacity-40': disabled,
 				// Active: blue highlight, raised with inner shadow
 				'border border-blue-300 bg-blue-50 text-blue-700 shadow-md': active && !disabled,
 				// Inactive: neutral, subtle flat design
@@ -140,7 +150,7 @@
 			</Label>
 
 			<!-- Input mode selector -->
-			<ButtonGroup>
+			<ButtonGroup class="gap-2">
 				{@render InputModeButton('cursor')}
 				{@render InputModeButton('face')}
 				{@render InputModeButton('gyro')}
@@ -157,7 +167,7 @@
 				/>
 			</div>
 
-			<Toggle bind:checked={renderWebCamPreview}>Show Webcam / Face Detection</Toggle>
+			<Toggle bind:checked={renderWebCamPreview}>Large WebCam Preview</Toggle>
 		</div>
 
 		<!-- Actual file selector -->
@@ -165,8 +175,10 @@
 	</div>
 {/snippet}
 
-<div class="fixed top-0 left-0 flex h-screen w-screen flex-row flex-wrap">
-	{@render InputsAndConfig()}
+<div class="fixed top-0 left-0 flex h-screen w-screen flex-col">
+	<div class="shrink-0 basis-auto">
+		{@render InputsAndConfig()}
+	</div>
 
 	<FaceDetector
 		renderPreview={renderWebCamPreview}
@@ -181,7 +193,10 @@
 			threeJSControls.update();
 		}}
 		activationButton={webcamStreamTriggerButton}
-		bind:isActive={movementInputsActive['face']}
+		onIsActiveChange={(isActive) => {
+			console.log(`FaceDetector status changed: ${isActive}`);
+			movementInputsActive.face = isActive;
+		}}
 	/>
 
 	<GyroInput
@@ -198,14 +213,32 @@
 	<!-- Input image preview -->
 	<img bind:this={previewImageElem} alt="Input preview" src={previewImageSrcURI} class="hidden" />
 
-	{#if depthExtractionResults && previewImageElem}
-		<ThreeRenderer
-			depthMap={depthExtractionResults.depthMap}
-			image={previewImageElem}
-			bind:controls={threeJSControls}
-			bind:camera={threeJSCamera}
-			bind:displacementScale
-			bind:renderer={threeJSRenderer}
-		/>
-	{/if}
+	<div class="relative flex w-full flex-1 grow flex-col">
+		{#if isProcessing}
+			<div class="absolute inset-0 flex items-center justify-center bg-white/80 backdrop-blur-sm">
+				<div class="flex flex-col items-center gap-3">
+					<Spinner type="default" color="primary" />
+					<p class="text-sm font-medium text-gray-600">Processing...</p>
+				</div>
+			</div>
+		{:else if !fileList?.length}
+			<div class="absolute inset-0 flex items-center justify-center">
+				<div class="flex flex-col items-center gap-4 text-gray-400">
+					<LucideScanFace width={64} height={64} />
+					<p class="text-lg font-medium">Upload an image to get started</p>
+				</div>
+			</div>
+		{/if}
+
+		{#if depthExtractionResults && previewImageElem}
+			<ThreeRenderer
+				depthMap={depthExtractionResults.depthMap}
+				image={previewImageElem}
+				bind:controls={threeJSControls}
+				bind:camera={threeJSCamera}
+				bind:displacementScale
+				bind:renderer={threeJSRenderer}
+			/>
+		{/if}
+	</div>
 </div>
