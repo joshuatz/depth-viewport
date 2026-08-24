@@ -2,12 +2,25 @@
 	import {
 		DEPTH_MODEL_OPTIONS,
 		type DepthExtractionResults,
+		type DepthExtractionSource,
+		type DepthExtractionSourceID,
 		type DepthModelOption,
-		runDepthExtraction
+		getAvailableDepthExtractionSources,
+		runDepthExtractionML
 	} from '$lib/processing';
 	import { cn } from 'cnfast';
-	import { ButtonGroup, Fileupload, Label, Range, Select, Spinner, Toggle } from 'flowbite-svelte';
-	import { watch } from 'runed';
+	import {
+		Alert,
+		ButtonGroup,
+		Fileupload,
+		Label,
+		Popover,
+		Range,
+		Select,
+		Spinner,
+		Toggle
+	} from 'flowbite-svelte';
+	import { PersistedState, resource, watch } from 'runed';
 	import type { PerspectiveCamera, WebGLRenderer } from 'three';
 	import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 	import LucideMousePointerClick from '~icons/lucide/mouse-pointer-click';
@@ -20,7 +33,6 @@
 	let fileList = $state<FileList>();
 	let previewImageSrcURI = $state<string>();
 	let previewImageElem = $state<HTMLImageElement>();
-	let depthExtractionResults = $state<DepthExtractionResults>();
 	let threeJSControls = $state<OrbitControls>();
 	let threeJSCamera = $state<PerspectiveCamera>();
 	let threeJSRenderer = $state<WebGLRenderer>();
@@ -28,7 +40,28 @@
 	let displacementScale = $state(0.8);
 	let renderWebCamPreview = $state(false);
 	let webcamStreamTriggerButton = $state<HTMLElement>();
-	let isProcessing = $state(false);
+	let processingStatus = $state<
+		'unset' | 'checking_input' | 'awaiting_extraction' | 'extracting' | 'complete'
+	>('unset');
+
+	/**
+	 * The depth ML pipeline is heavy; users should be warned before downloading
+	 */
+	const depthModelSizeWarningAcknowledged = new PersistedState(
+		'depthModelSizeWarningAcknowledged',
+		false
+	);
+
+	/**
+	 * Tracks all the various parts of the image processing pipeline and final state
+	 */
+	let currentImageState = $state<{
+		imageBytes?: ArrayBuffer;
+		objectURL?: string;
+		depthExtractionSource?: DepthExtractionSource;
+		confirmedSource?: DepthExtractionSourceID;
+		depthExtractionResults?: DepthExtractionResults;
+	}>({});
 
 	type MovementInputType = 'cursor' | 'face' | 'gyro';
 	let movementInputsActive = $state<Record<MovementInputType, boolean>>({
@@ -53,30 +86,80 @@
 		({ fileList, previewImageElem }) => {
 			if (!fileList?.length || !previewImageElem) {
 				previewImageSrcURI = undefined;
+				currentImageState = {};
 				return;
 			}
-			if (isProcessing) {
+			if (processingStatus !== 'unset' && processingStatus !== 'complete') {
 				return;
 			}
-			isProcessing = true;
+			currentImageState = {};
+			processingStatus = 'checking_input';
 			const objectURL = URL.createObjectURL(fileList[0]);
 
 			previewImageSrcURI = objectURL;
 			previewImageElem.onload = async () => {
 				const imageBytes = await fileList![0].arrayBuffer();
+				currentImageState.imageBytes = imageBytes;
+				currentImageState.objectURL = objectURL;
 
-				depthExtractionResults = await runDepthExtraction({
-					imageBytes,
-					mlPipelineInput: objectURL,
-					model: selectedDepthModel
+				// Check if we can use embedded depth map vs forced to use ML
+				currentImageState.depthExtractionSource = await getAvailableDepthExtractionSources({
+					imageBytes
 				});
-				// Automatically tone-down the depth effect if the source is an embedded depth map
-				if (depthExtractionResults.source === 'embedded') {
-					displacementScale = 0.2;
+
+				// If ML is only option, but user has already confirmed, just set state directly to trigger processing
+				if (
+					depthModelSizeWarningAcknowledged.current === true &&
+					currentImageState.depthExtractionSource.source === 'ml'
+				) {
+					currentImageState.confirmedSource = 'ml';
 				}
-				URL.revokeObjectURL(objectURL);
-				isProcessing = false;
+
+				processingStatus = 'awaiting_extraction';
 			};
+		}
+	);
+
+	// Watch for when we are ready to start processing
+	resource(
+		() => ({ currentImageState: $state.snapshot(currentImageState), processingStatus }),
+		async () => {
+			if (
+				processingStatus !== 'awaiting_extraction' ||
+				!currentImageState.depthExtractionSource ||
+				!currentImageState.confirmedSource ||
+				!!currentImageState.depthExtractionResults
+			) {
+				return;
+			}
+			processingStatus = 'extracting';
+
+			if (currentImageState.confirmedSource === 'ml' && currentImageState.objectURL) {
+				// Reset to default for ML
+				displacementScale = 0.8;
+				// Remember that user has opted-in to fetching ML model
+				depthModelSizeWarningAcknowledged.current = true;
+
+				currentImageState.depthExtractionResults = await runDepthExtractionML({
+					model: selectedDepthModel,
+					mlPipelineInput: currentImageState.objectURL
+				});
+			} else if (
+				currentImageState.confirmedSource === 'embedded' &&
+				currentImageState.depthExtractionSource.source === 'embedded'
+			) {
+				// Automatically tone-down the depth effect if the source is an embedded depth map
+				displacementScale = 0.2;
+				// We already have the embedded depth map - just need to set it in state
+				currentImageState.depthExtractionResults = currentImageState.depthExtractionSource;
+			}
+
+			// We can release / revoke this now
+			if (currentImageState.objectURL) {
+				URL.revokeObjectURL(currentImageState.objectURL);
+			}
+
+			processingStatus = 'complete';
 		}
 	);
 
@@ -132,6 +215,19 @@
 	>
 		<Icon />
 	</button>
+	<Popover>
+		<div class="flex flex-col gap-2">
+			<h3>Input Mode: {inputType}</h3>
+			{#if inputType === 'face'}
+				<Alert color="warning">
+					<span
+						>Warning: Enabling face controls will fetch ~6 MB in resources to run in-browser
+						inference.</span
+					>
+				</Alert>
+			{/if}
+		</div>
+	</Popover>
 {/snippet}
 
 {#snippet InputsAndConfig()}
@@ -214,13 +310,15 @@
 	<img bind:this={previewImageElem} alt="Input preview" src={previewImageSrcURI} class="hidden" />
 
 	<div class="relative flex w-full flex-1 grow flex-col">
-		{#if isProcessing}
+		<!-- Processing / loading spinner -->
+		{#if processingStatus !== 'complete' && processingStatus !== 'unset'}
 			<div class="absolute inset-0 flex items-center justify-center bg-white/80 backdrop-blur-sm">
 				<div class="flex flex-col items-center gap-3">
 					<Spinner type="default" color="primary" />
 					<p class="text-sm font-medium text-gray-600">Processing...</p>
 				</div>
 			</div>
+			<!-- No file selected yet -->
 		{:else if !fileList?.length}
 			<div class="absolute inset-0 flex items-center justify-center">
 				<div class="flex flex-col items-center gap-4 text-gray-400">
@@ -230,9 +328,82 @@
 			</div>
 		{/if}
 
-		{#if depthExtractionResults && previewImageElem}
+		<!-- User needs to confirm fetch of ML model -->
+		{#if currentImageState.depthExtractionSource?.source === 'ml' && !depthModelSizeWarningAcknowledged.current}
+			<div
+				class="absolute inset-0 z-50 flex items-center justify-center bg-white/80 backdrop-blur-sm"
+			>
+				<div class="mx-4 max-w-md rounded-lg border border-gray-200 bg-white p-6 shadow-xl">
+					<h3 class="mb-2 text-lg font-semibold text-gray-900">Download Depth Model Required</h3>
+					<Alert color="warning" class="mb-4">
+						<span
+							>Fetching the depth extraction model will download ~100 MB of resources for in-browser
+							inference.</span
+						>
+					</Alert>
+					<div class="flex justify-end gap-3">
+						<button
+							type="button"
+							onclick={() => {
+								currentImageState.depthExtractionSource = undefined;
+							}}
+							class="cursor-pointer rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-50"
+						>
+							Cancel
+						</button>
+						<button
+							type="button"
+							onclick={() => {
+								currentImageState.confirmedSource = 'ml';
+							}}
+							class="cursor-pointer rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700"
+						>
+							Continue
+						</button>
+					</div>
+				</div>
+			</div>
+		{/if}
+
+		<!-- User needs to choose between embedded and ML model -->
+		{#if currentImageState.depthExtractionSource?.source === 'embedded' && !currentImageState.confirmedSource}
+			<div
+				class="absolute inset-0 z-50 flex items-center justify-center bg-white/80 backdrop-blur-sm"
+			>
+				<div class="mx-4 max-w-md rounded-lg border border-gray-200 bg-white p-6 shadow-xl">
+					<h3 class="mb-2 text-lg font-semibold text-gray-900">Choose Depth Source</h3>
+					<p class="mb-4 text-sm text-gray-600">
+						This image contains an embedded depth map. You can use it directly, or run ML extraction
+						(requires ~100 MB model) for a potentially more accurate result.
+					</p>
+					<div class="flex justify-end gap-3">
+						<button
+							type="button"
+							onclick={() => {
+								currentImageState.confirmedSource = 'ml';
+							}}
+							class="cursor-pointer rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-50"
+						>
+							Use ML Model
+						</button>
+						<button
+							type="button"
+							onclick={() => {
+								currentImageState.confirmedSource = 'embedded';
+							}}
+							class="cursor-pointer rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700"
+						>
+							Use Embedded Depth Map
+						</button>
+					</div>
+				</div>
+			</div>
+		{/if}
+
+		<!-- Actual results -->
+		{#if currentImageState.depthExtractionResults && previewImageElem}
 			<ThreeRenderer
-				depthMap={depthExtractionResults.depthMap}
+				depthMap={currentImageState.depthExtractionResults.depthMap}
 				image={previewImageElem}
 				bind:controls={threeJSControls}
 				bind:camera={threeJSCamera}

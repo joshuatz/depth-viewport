@@ -48,6 +48,17 @@ export async function runDepthEstimation(
 	return Array.isArray(result) ? result[0] : result;
 }
 
+export type DepthExtractionSource =
+	| {
+			source: 'embedded';
+			depthMap: RawImage;
+	  }
+	| {
+			source: 'ml';
+	  };
+
+export type DepthExtractionSourceID = DepthExtractionSource['source'];
+
 export type DepthExtractionResults =
 	| {
 			source: 'embedded';
@@ -59,15 +70,11 @@ export type DepthExtractionResults =
 			mlOutput: DepthEstimationOutput;
 	  };
 
-export async function runDepthExtraction({
-	imageBytes,
-	model,
-	mlPipelineInput
+export async function getAvailableDepthExtractionSources({
+	imageBytes
 }: {
 	imageBytes: ArrayBuffer;
-	model: DepthModelOption;
-	mlPipelineInput: ImagePipelineInputs;
-}): Promise<DepthExtractionResults> {
+}): Promise<DepthExtractionSource> {
 	// Try to auto-extract embedded depth maps (e.g. from certain smartphones)
 	const jpegSegments: number[] = [];
 	const buffer = new Uint8Array(imageBytes);
@@ -93,6 +100,19 @@ export async function runDepthExtraction({
 	} else {
 		console.log('No secondary embedded JPEG segment found.');
 	}
+	// fallback to ML extraction (e.g. depth-anything)
+	return {
+		source: 'ml'
+	};
+}
+
+export async function runDepthExtractionML({
+	model,
+	mlPipelineInput
+}: {
+	model: DepthModelOption;
+	mlPipelineInput: ImagePipelineInputs;
+}): Promise<DepthExtractionResults> {
 	// fallback to ML extraction (e.g. depth-anything)
 	const mlOutput = await runDepthEstimation(mlPipelineInput, model);
 	return {
