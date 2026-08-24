@@ -297,8 +297,9 @@
 			const parallaxStrength = 0.008;
 
 			// Shift camera position to create parallax effect
+			// (note that these are both inverted)
 			threeJSCamera.position.x -= delta.x * parallaxStrength;
-			threeJSCamera.position.y += delta.y * parallaxStrength;
+			threeJSCamera.position.y -= delta.y * parallaxStrength;
 
 			threeJSControls.update();
 		}}
