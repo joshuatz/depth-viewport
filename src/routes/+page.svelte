@@ -14,6 +14,7 @@
 		ButtonGroup,
 		Fileupload,
 		Label,
+		Modal,
 		Popover,
 		Range,
 		Select,
@@ -23,6 +24,7 @@
 	import { PersistedState, resource, watch } from 'runed';
 	import type { PerspectiveCamera, WebGLRenderer } from 'three';
 	import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+	import LucideBadgeInfo from '~icons/lucide/badge-info';
 	import LucideMousePointerClick from '~icons/lucide/mouse-pointer-click';
 	import LucideRotate3d from '~icons/lucide/rotate-3d';
 	import LucideScanFace from '~icons/lucide/scan-face';
@@ -43,6 +45,7 @@
 	let processingStatus = $state<
 		'unset' | 'checking_input' | 'awaiting_extraction' | 'extracting' | 'complete'
 	>('unset');
+	let showInfoModal = $state(false);
 
 	/**
 	 * The depth ML pipeline is heavy; users should be warned before downloading
@@ -266,8 +269,19 @@
 			<Toggle bind:checked={renderWebCamPreview}>Large WebCam Preview</Toggle>
 		</div>
 
-		<!-- Actual file selector -->
-		<Fileupload class="grow" bind:files={fileList} clearable />
+		<div class="flex grow flex-row flex-nowrap items-start">
+			<div class="flex w-full flex-row">
+				<!-- Actual file selector -->
+				<Fileupload class="grow" bind:files={fileList} clearable />
+				<button
+					type="button"
+					onclick={() => (showInfoModal = true)}
+					class="flex items-center justify-center p-4 pt-3 text-lg"
+				>
+					<LucideBadgeInfo />
+				</button>
+			</div>
+		</div>
 	</div>
 {/snippet}
 
@@ -413,3 +427,34 @@
 		{/if}
 	</div>
 </div>
+
+<Modal bind:open={showInfoModal} title="About">
+	<div class="flex flex-col gap-4 text-sm text-gray-600">
+		<p>A depth visualization tool powered by in-browser ML and/or embedded depth maps.</p>
+		<p>
+			Depth viewport can be controlled with a standard mouse / touch input, as well as your face's
+			relative position, or your phone's gyroscope (depending on capabilities) - all for a more
+			immersive parallax effect.
+		</p>
+		<p>
+			Created by
+			<a
+				href="https://joshuatz.com/"
+				target="_blank"
+				class="text-blue-600 underline transition-colors hover:text-blue-800"
+			>
+				Joshua Tzucker
+			</a>
+		</p>
+		<p>
+			View the source code on
+			<a
+				href="https://github.com/joshuatz/depth-viewport"
+				target="_blank"
+				class="text-blue-600 underline transition-colors hover:text-blue-800"
+			>
+				GitHub
+			</a>
+		</p>
+	</div>
+</Modal>
