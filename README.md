@@ -4,6 +4,10 @@ A 100% client-side web app that transforms 2D images into interactive 3D paralla
 
 Use your mouse, face, or gyroscope / phone position to control!
 
+## Live Web App
+
+### [depth-viewport.netlify.app](https://depth-viewport.netlify.app/)
+
 ## Features
 
 - **Depth map extraction** — Load images with embedded depth maps (from compatible smartphones) or run the Depth Anything V2 model directly in the browser via Hugging Face Transformers
