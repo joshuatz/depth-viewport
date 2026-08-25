@@ -12,6 +12,7 @@
 	import {
 		Alert,
 		ButtonGroup,
+		Dropzone,
 		Fileupload,
 		Label,
 		Modal,
@@ -32,7 +33,8 @@
 	import GyroInput from '../components/GyroInput.svelte';
 	import ThreeRenderer from '../components/ThreeRenderer.svelte';
 
-	let fileList = $state<FileList>();
+	let fileInput = $state<HTMLInputElement>();
+	let fileList = $state<FileList | null>();
 	let previewImageSrcURI = $state<string>();
 	let previewImageElem = $state<HTMLImageElement>();
 	let threeJSControls = $state<OrbitControls>();
@@ -281,7 +283,7 @@
 		<div class="flex grow flex-row flex-nowrap items-start">
 			<div class="flex w-full flex-row">
 				<!-- Actual file selector -->
-				<Fileupload class="grow" bind:files={fileList} clearable />
+				<Fileupload class="grow" bind:files={fileList} clearable bind:elementRef={fileInput} />
 				<button
 					type="button"
 					onclick={() => (showInfoModal = true)}
@@ -345,15 +347,40 @@
 			<!-- No file selected yet -->
 		{:else if !fileList?.length}
 			<div class="absolute inset-0 flex items-center justify-center">
-				<div class="flex flex-col items-center gap-4 text-gray-400">
+				<Dropzone
+					bind:files={fileList}
+					onChange={(e: Event) => {
+						const target = e.target as HTMLInputElement;
+						fileList = target.files;
+					}}
+					onDrop={(e: DragEvent) => {
+						e.preventDefault();
+						fileList = e.dataTransfer?.files ?? null;
+					}}
+					onclick={(evt) => {
+						evt.preventDefault();
+						evt.stopPropagation();
+						fileInput?.click();
+					}}
+					class="flex max-w-xl flex-col items-center gap-4 rounded-xl border-2 border-dashed border-gray-300 bg-gray-50 p-12 text-gray-400 transition-colors hover:border-gray-400 hover:bg-gray-100"
+				>
 					<LucideScanFace width={64} height={64} />
 					<p class="text-xl font-medium">Upload an image to get started</p>
 					<p class="text-lg font-medium">
-						Or, <button class="text-purple-600" onclick={loadSampleImage}
-							>try the sample image.</button
+						<!-- svelte-ignore a11y_click_events_have_key_events -->
+						Or,
+						<span
+							tabindex="0"
+							role="button"
+							class="text-purple-600"
+							onclick={(evt) => {
+								evt.preventDefault();
+								evt.stopPropagation();
+								loadSampleImage();
+							}}>try the sample image.</span
 						>
 					</p>
-				</div>
+				</Dropzone>
 			</div>
 		{/if}
 
