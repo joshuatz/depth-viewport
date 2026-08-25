@@ -72,22 +72,36 @@
 			const planeHeight = 2 / aspect;
 			const geometry = new THREE.PlaneGeometry(planeWidth, planeHeight, 128, 128);
 
-			const material = new THREE.MeshStandardMaterial({
-				map: colorTexture,
-				displacementMap: depthTexture,
-				displacementScale
+			const material = new THREE.ShaderMaterial({
+				uniforms: {
+					colorTexture: { value: colorTexture },
+					depthTexture: { value: depthTexture },
+					displacementScale: { value: displacementScale },
+				},
+				vertexShader: `
+					varying vec2 vUv;
+					uniform sampler2D depthTexture;
+					uniform float displacementScale;
+
+					void main() {
+						vUv = uv;
+						float depth = texture2D(depthTexture, uv).r;
+						vec3 newPosition = position + normal * depth * displacementScale;
+						gl_Position = projectionMatrix * modelViewMatrix * vec4(newPosition, 1.0);
+					}
+				`,
+				fragmentShader: `
+					varying vec2 vUv;
+					uniform sampler2D colorTexture;
+
+					void main() {
+						gl_FragColor = texture2D(colorTexture, vUv);
+					}
+				`,
 			});
 
 			const mesh = new THREE.Mesh(geometry, material);
 			scene.add(mesh);
-
-			// Direct key light from the camera position (0,0,2) with intensity 2 to cast realistic shadows over extruded surfaces.
-			const light = new THREE.DirectionalLight(0xffffff, 2);
-			light.position.set(0, 0, 2);
-			scene.add(light);
-
-			// Low-intensity soft overall light (0.5) so unlit backside slopes remain visible rather than pitch black.
-			scene.add(new THREE.AmbientLight(0xffffff, 0.5));
 
 			let frameId: number;
 			const animate = () => {
