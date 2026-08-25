@@ -83,6 +83,15 @@
 		gyro: LucideRotate3d
 	};
 
+	const loadSampleImage = async () => {
+		const response = await fetch('/falling_water_full_res.jpg');
+		const blob = await response.blob();
+		const file = new File([blob], 'fallingwater.jpg', { type: blob.type });
+		const dt = new DataTransfer();
+		dt.items.add(file);
+		fileList = dt.files;
+	};
+
 	// Process file on input / file selection
 	watch(
 		() => ({ fileList, previewImageElem }),
@@ -338,7 +347,12 @@
 			<div class="absolute inset-0 flex items-center justify-center">
 				<div class="flex flex-col items-center gap-4 text-gray-400">
 					<LucideScanFace width={64} height={64} />
-					<p class="text-lg font-medium">Upload an image to get started</p>
+					<p class="text-xl font-medium">Upload an image to get started</p>
+					<p class="text-lg font-medium">
+						Or, <button class="text-purple-600" onclick={loadSampleImage}
+							>try the sample image.</button
+						>
+					</p>
 				</div>
 			</div>
 		{/if}
@@ -389,7 +403,7 @@
 					<h3 class="mb-2 text-lg font-semibold text-gray-900">Choose Depth Source</h3>
 					<p class="mb-4 text-sm text-gray-600">
 						This image contains an embedded depth map. You can use it directly, or run ML extraction
-						(requires ~100 MB model) for a potentially more accurate result.
+						(requires ~100 MB model) for a (generally) more impressive result.
 					</p>
 					<div class="flex justify-end gap-3">
 						<button
@@ -456,6 +470,14 @@
 			>
 				GitHub
 			</a>
+		</p>
+		<p>
+			Sample image, CC 3.0 Attribution: <a
+				href="https://en.wikipedia.org/wiki/File:Wrightfallingwater.jpg"
+				target="_blank"
+				class="text-blue-600 underline transition-colors hover:text-blue-800"
+				>Wikimedia Commons, Sxenko</a
+			>
 		</p>
 	</div>
 </Modal>
