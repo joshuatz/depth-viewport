@@ -63,11 +63,14 @@
 			const depthTexture = new THREE.CanvasTexture(depthCanvas);
 
 			// PlaneGeometry parameters:
-			// width = 2, height = 2: Creates a normalized square unit plane centered at (0,0,0).
+			// width/height are scaled to match the image's natural aspect ratio so the texture isn't stretched.
 			// widthSegments = 128, heightSegments = 128: Divides the plane into a 128x128 grid (16,384 quads / 32,768 triangles).
 			// A flat plane only has 4 vertices; high segmentation is required so individual vertices can be pushed
 			// outward by the displacement map to form detailed 3D relief without visible jaggedness.
-			const geometry = new THREE.PlaneGeometry(2, 2, 128, 128);
+			const aspect = image.naturalWidth / image.naturalHeight;
+			const planeWidth = 2;
+			const planeHeight = 2 / aspect;
+			const geometry = new THREE.PlaneGeometry(planeWidth, planeHeight, 128, 128);
 
 			const material = new THREE.MeshStandardMaterial({
 				map: colorTexture,
