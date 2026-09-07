@@ -125,14 +125,38 @@
 			}
 
 			// Bounding box itself
-			outputVisCtx.strokeStyle = '#00FF00';
-			outputVisCtx.lineWidth = 3;
+			outputVisCtx.strokeStyle = '#EB4F26';
+			outputVisCtx.lineWidth = 20;
 			outputVisCtx.strokeRect(bboxX, bboxY, boxW, boxH);
 
 			if (!renderPreview) {
 				// Render face detection as just a box (completely obscure face)
-				outputVisCtx.fillStyle = '#000000';
+				outputVisCtx.fillStyle = '#00FF00';
 				outputVisCtx.fillRect(bboxX, bboxY, boxW, boxH);
+
+				// Draw smiley face in the middle of the box
+				const centerX = bboxX + boxW / 2;
+				const centerY = bboxY + boxH / 2;
+				const eyeRadius = boxW * 0.1;
+				const smileRadius = boxW * 0.25;
+				outputVisCtx.fillStyle = '#000000';
+
+				// Left eye
+				outputVisCtx.beginPath();
+				outputVisCtx.arc(centerX - boxW * 0.2, centerY - boxH * 0.15, eyeRadius, 0, Math.PI * 2);
+				outputVisCtx.fill();
+
+				// Right eye
+				outputVisCtx.beginPath();
+				outputVisCtx.arc(centerX + boxW * 0.2, centerY - boxH * 0.15, eyeRadius, 0, Math.PI * 2);
+				outputVisCtx.fill();
+
+				// Smile
+				outputVisCtx.beginPath();
+				outputVisCtx.arc(centerX, centerY + boxH * 0.05, smileRadius, 0.1 * Math.PI, 0.9 * Math.PI);
+				outputVisCtx.strokeStyle = '#000000';
+				outputVisCtx.lineWidth = Math.max(2, boxW * 0.05);
+				outputVisCtx.stroke();
 			}
 
 			// Solid fill background behind text
@@ -362,7 +386,7 @@
 	height={intrinsicVideoDims.height}
 	style="aspect-ratio: {intrinsicVideoDims.width / intrinsicVideoDims.height};"
 	class={cn('h-auto', {
-		'fixed bottom-0 left-1 z-10 w-25 border border-dashed border-white opacity-60 hover:opacity-90':
+		'fixed bottom-0 left-1 z-10 w-25 origin-bottom-left border border-dashed border-white opacity-60 hover:scale-200 hover:opacity-90':
 			!renderPreview,
 		'w-full': renderPreview,
 		hidden: !isActive
