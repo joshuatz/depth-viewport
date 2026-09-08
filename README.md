@@ -6,6 +6,8 @@ Use your mouse, face, or gyroscope / phone position to control!
 
 ## Live Web App
 
+![demo of depth-viewport, showing webcam face tracking being used to control a 3D rendered scene sourced from a 2D image](./docs/depth_viewport_demo.gif)
+
 ### [depth-viewport.netlify.app](https://depth-viewport.netlify.app/)
 
 ## Features
@@ -45,3 +47,5 @@ Open [http://localhost:5173](http://localhost:5173) in your browser.
 
 > [!WARNING]
 > Some web APIs require HTTPS to work (e.g., face tracking, device orientation). You will need to use a local tunnel or self-signed SSL workflow to test those features locally.
+
+You can read more about this project and prior art over at [my website](https://joshuatz.com/projects/web-stuff/depth-viewport-a-headset-free-2d-to-3d-web-app-demo/).
